@@ -3,7 +3,11 @@ from pathlib import Path
 
 
 def collect_failures(report_path):
-    """Extract failed test details from a PyTest JSON report.
+    """
+    Extract failed test details from a PyTest JSON report.
+
+    Run this Command to collect all failed tests.
+    python -m failure_analyzer.failure_collector
     """
 
     report_file = Path(report_path)
@@ -19,33 +23,39 @@ def collect_failures(report_path):
     failures = []
 
     for test in report.get("tests", []):
-        if test.get("outcome") == "failed":
-            call_details = test.get("call", {})
-            error_details = call_details.get("crash", {})
+        if test.get("outcome") != "failed":
+            continue
 
-            failure = {
-                "test_name": test.get("nodeid", "Unknown test"),
-                "status": test.get("outcome"),
-                "duration": call_details.get("duration", 0),
-                "error": error_details.get("message", "No error message"),
-                "traceback": error_details.get("traceback", ""),
-            }
+        call_details = test.get("call") or {}
+        error_details = call_details.get("crash") or {}
 
-            failures.append(failure)
+        failures.append({
+            "test_name": test.get("nodeid", "Unknown test"),
+            "status": test.get("outcome"),
+            "duration": call_details.get("duration", 0),
+            "error": error_details.get(
+                "message", "No error message available"
+            ),
+            "traceback": error_details.get("traceback", ""),
+        })
 
     return failures
 
 
-if __name__ == "__main__":
-    report_path = "reports/test-results.json"
+def main():
+    report_path = Path("reports") / "test-results.json"
     failures = collect_failures(report_path)
 
-    print(f"\nTotal failed tests: {len(failures)}")
+    print(f"Total failed tests: {len(failures)}")
 
     for failure in failures:
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print(f"Test     : {failure['test_name']}")
         print(f"Status   : {failure['status']}")
         print(f"Duration : {failure['duration']:.2f} seconds")
         print(f"Error    : {failure['error']}")
         print(f"Traceback:\n{failure['traceback']}")
+
+
+if __name__ == "__main__":
+    main()
