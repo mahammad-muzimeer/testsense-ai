@@ -1,4 +1,5 @@
 import json
+from failure_analyzer.failure_classifier import classify_failure
 from pathlib import Path
 
 
@@ -33,10 +34,12 @@ def collect_failures(report_path):
             "test_name": test.get("nodeid", "Unknown test"),
             "status": test.get("outcome"),
             "duration": call_details.get("duration", 0),
-            "error": error_details.get(
-                "message", "No error message available"
-            ),
+            "error": error_details.get("message", "No error message available"),
             "traceback": error_details.get("traceback", ""),
+            "category": classify_failure(
+                error_details.get("message", ""),
+                error_details.get("traceback", "")
+            )
         })
 
     return failures
@@ -55,6 +58,7 @@ def main():
         print(f"Duration : {failure['duration']:.2f} seconds")
         print(f"Error    : {failure['error']}")
         print(f"Traceback:\n{failure['traceback']}")
+        print(f"Category : {failure['category']}")
 
 
 if __name__ == "__main__":
