@@ -1,4 +1,5 @@
 import json
+from failure_analyzer.database import create_database, save_test_result
 from failure_analyzer.failure_classifier import classify_failure
 from pathlib import Path
 
@@ -47,6 +48,8 @@ def collect_failures(report_path):
 
 def main():
     report_path = Path("reports") / "test-results.json"
+
+    create_database()
     failures = collect_failures(report_path)
 
     print(f"Total failed tests: {len(failures)}")
@@ -59,6 +62,15 @@ def main():
         print(f"Error    : {failure['error']}")
         print(f"Traceback:\n{failure['traceback']}")
         print(f"Category : {failure['category']}")
+
+        save_test_result(
+            test_name=failure["test_name"],
+            status=failure["status"],
+            duration=failure["duration"],
+            error=failure["error"],
+            traceback=failure["traceback"],
+            category=failure["category"]
+        )
 
 
 if __name__ == "__main__":
