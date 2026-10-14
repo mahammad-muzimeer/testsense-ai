@@ -22,55 +22,67 @@ def collect_failures(report_path):
     with report_file.open("r", encoding="utf-8") as file:
         report = json.load(file)
 
-    failures = []
+    results = []
 
     for test in report.get("tests", []):
-        if test.get("outcome") != "failed":
-            continue
-
+        outcome = test.get("outcome", "unknown")
         call_details = test.get("call") or {}
-        error_details = call_details.get("crash") or {}
+        setup_details = test.get("setup") or {}
+        teardown_details = test.get("teardown") or {}
 
-        failures.append({
+        failed_phase = next(
+            (
+                phase
+                for phase in (call_details, setup_details, teardown_details)
+                if phase.get("outcome") == "failed"
+            ),
+            call_details,
+        )
+
+        error_details = failed_phase.get("crash") or {}
+        error = error_details.get("message", "")
+        traceback = error_details.get("traceback", "")
+
+        category = (
+            classify_failure(error, traceback)
+            if outcome == "failed"
+            else ""
+        )
+
+        results.append({
             "test_name": test.get("nodeid", "Unknown test"),
-            "status": test.get("outcome"),
-            "duration": call_details.get("duration", 0),
-            "error": error_details.get("message", "No error message available"),
-            "traceback": error_details.get("traceback", ""),
-            "category": classify_failure(
-                error_details.get("message", ""),
-                error_details.get("traceback", "")
-            )
+            "status": outcome,
+            "duration": test.get("duration", 0),
+            "error": error,
+            "traceback": traceback,
+            "category": category
         })
 
-    return failures
+    return results
 
 
 def main():
     report_path = Path("reports") / "test-results.json"
 
     create_database()
-    failures = collect_failures(report_path)
+    results = collect_failures(report_path)
 
-    print(f"Total failed tests: {len(failures)}")
-
-    for failure in failures:
-        print("\n" + "=" * 60)
-        print(f"Test     : {failure['test_name']}")
-        print(f"Status   : {failure['status']}")
-        print(f"Duration : {failure['duration']:.2f} seconds")
-        print(f"Error    : {failure['error']}")
-        print(f"Traceback:\n{failure['traceback']}")
-        print(f"Category : {failure['category']}")
-
+    for result in results:
         save_test_result(
-            test_name=failure["test_name"],
-            status=failure["status"],
-            duration=failure["duration"],
-            error=failure["error"],
-            traceback=failure["traceback"],
-            category=failure["category"]
+            test_name=result["test_name"],
+            status=result["status"],
+            duration=result["duration"],
+            error=result["error"],
+            traceback=result["traceback"],
+            category=result["category"]
         )
+
+    passed = sum(r["status"] == "passed" for r in results)
+    failed = sum(r["status"] == "failed" for r in results)
+
+    print(f"\nTotal tests processed: {len(results)}")
+    print(f"Passed tests: {passed}")
+    print(f"Failed tests: {failed}")
 
 
 if __name__ == "__main__":

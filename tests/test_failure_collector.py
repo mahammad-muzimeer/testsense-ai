@@ -10,7 +10,9 @@ def test_collects_failed_tests(tmp_path):
             {
                 "nodeid": "tests/test_login.py::test_invalid_login",
                 "outcome": "failed",
+                "duration": 0.15,
                 "call": {
+                    "outcome": "failed",
                     "duration": 0.15,
                     "crash": {
                         "message": "AssertionError",
@@ -21,7 +23,11 @@ def test_collects_failed_tests(tmp_path):
             {
                 "nodeid": "tests/test_login.py::test_valid_login",
                 "outcome": "passed",
-                "call": {"duration": 0.05},
+                "duration": 0.05,
+                "call": {
+                    "outcome": "passed",
+                    "duration": 0.05
+                },
             },
         ]
     }
@@ -29,14 +35,23 @@ def test_collects_failed_tests(tmp_path):
     report_file = tmp_path / "test_collects_failed_results.json"
     report_file.write_text(json.dumps(report), encoding="utf-8")
 
-    failures = collect_failures(report_file)
+    results = collect_failures(report_file)
 
-    assert len(failures) == 1
-    assert failures[0]["status"] == "failed"
-    assert failures[0]["test_name"] == (
+    # The collector now returns both failed and passed tests.
+    assert len(results) == 2
+
+    assert results[0]["status"] == "failed"
+    assert results[0]["test_name"] == (
         "tests/test_login.py::test_invalid_login"
     )
-    assert failures[0]["error"] == "AssertionError"
+    assert results[0]["error"] == "AssertionError"
+    assert results[0]["category"] == "Assertion Failure"
+
+    assert results[1]["status"] == "passed"
+    assert results[1]["test_name"] == (
+        "tests/test_login.py::test_valid_login"
+    )
+    assert results[1]["category"] == ""
 
 
 def test_missing_report_raises_error(tmp_path):
