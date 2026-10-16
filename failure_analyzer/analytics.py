@@ -1,9 +1,9 @@
 import sqlite3
-from failure_analyzer.database import DATABSE_PATH
+from failure_analyzer.database import DATABASE_PATH
 
 
 def get_test_statistics():
-    conn = sqlite3.connect(DATABSE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH)
 
     try:
         cursor = conn.cursor()
