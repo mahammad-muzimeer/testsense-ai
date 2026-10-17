@@ -59,7 +59,7 @@ def create_test_run():
 
     try:
         cursor = connection.cursor()
-        cursor.execute("INSERT INTO test_rus DEFAULT VALUES")
+        cursor.execute("INSERT INTO test_runs DEFAULT VALUES")
         connection.commit()
 
         run_id = cursor.lastrowid
@@ -75,7 +75,9 @@ def save_test_result(
         duration=0,
         error="",
         traceback="",
-        category=""):
+        category="",
+        run_id=None
+):
     """
     Save one test result to the SQLite database.
     """
@@ -91,16 +93,18 @@ def save_test_result(
                 duration, 
                 error, 
                 traceback, 
-                category
+                category,
+                run_id
             )
-            VALUES(?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
         """, (
             test_name,
             status,
             duration,
             error,
             traceback,
-            category
+            category,
+            run_id,
         ))
 
         connection.commit()

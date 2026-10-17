@@ -37,6 +37,14 @@ except requests.RequestException as error:
         "then refresh this dashboard."
     )
     st.stop()
+
+run_id = analytics.get("run_id")
+
+if run_id is not None:
+    st.caption(f"Latest Test run ID: {run_id}")
+else:
+    st.warning("No tracked test run found.")
+
 col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("Total Recorded results", analytics["total"])

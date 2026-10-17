@@ -1,5 +1,7 @@
 import json
-from failure_analyzer.database import create_database, save_test_result
+from failure_analyzer.database import (
+    create_database, create_test_run, save_test_result,
+)
 from failure_analyzer.failure_classifier import classify_failure
 from pathlib import Path
 
@@ -67,6 +69,12 @@ def main():
     create_database()
     results = collect_failures(report_path)
 
+    if not results:
+        print("No test results found in the report.")
+        return
+
+    run_id = create_test_run()
+
     for result in results:
         save_test_result(
             test_name=result["test_name"],
@@ -74,7 +82,8 @@ def main():
             duration=result["duration"],
             error=result["error"],
             traceback=result["traceback"],
-            category=result["category"]
+            category=result["category"],
+            run_id=run_id,
         )
 
     passed = sum(r["status"] == "passed" for r in results)

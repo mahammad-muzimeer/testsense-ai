@@ -32,17 +32,43 @@ def get_results(limit: int = 20):
 
     try:
         cursor = connection.cursor()
+
         cursor.execute(
             """
-            SELECT id, test_name, status, duration,
-                   error, category, created_at
+            SELECT MAX(run_id)
             FROM test_results
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (limit,),
+            WHERE run_id is NOT NULL
+            """
         )
-        return {"results": [dict(row) for row in cursor.fetchall()]}
+        latest_run_id = cursor.fetchone()[0]
+
+        if latest_run_id is None:
+            cursor.execute(
+                """
+                SELECT id, test_name, status, duration,
+                       error, category, created_at
+                FROM test_results
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, test_name, status, duration,
+                       error, category, created_at, run_id
+                FROM test_results
+                WHERE run_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (latest_run_id, limit,),
+            )
+        return {
+            "run_id": latest_run_id,
+            "results": [dict(row) for row in cursor.fetchall()],
+        }
 
     finally:
         connection.close()
