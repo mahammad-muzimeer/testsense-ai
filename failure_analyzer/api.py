@@ -46,7 +46,7 @@ def get_results(limit: int = 20):
             cursor.execute(
                 """
                 SELECT id, test_name, status, duration,
-                       error, category, created_at
+                       error,  traceback, category, created_at
                 FROM test_results
                 ORDER BY id DESC
                 LIMIT ?
@@ -57,7 +57,7 @@ def get_results(limit: int = 20):
             cursor.execute(
                 """
                 SELECT id, test_name, status, duration,
-                       error, category, created_at, run_id
+                       error, traceback, category, created_at, run_id
                 FROM test_results
                 WHERE run_id = ?
                 ORDER BY id DESC

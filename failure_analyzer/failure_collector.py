@@ -43,11 +43,34 @@ def collect_failures(report_path):
 
         error_details = failed_phase.get("crash") or {}
         error = error_details.get("message", "")
-        traceback = error_details.get("traceback", "")
+
+        traceback = failed_phase.get("longrepr", "")
+
+        if not traceback:
+            traceback = error_details.get("traceback", "")
+
+        # SQLite requires traceback to be a string.
+        if isinstance(traceback, list):
+            traceback = "\n".join(str(line) for line in traceback)
+        elif isinstance(traceback, dict):
+            traceback = json.dumps(traceback, indent=2)
+        elif traceback is None:
+            traceback = ""
+        else:
+            traceback = str(traceback)
+
+        if not error and traceback:
+            error = traceback
+
+        # Ensure the error message is also a string.
+        if error is None:
+            error = ""
+        elif not isinstance(error, str):
+            error = str(error)
 
         category = (
             classify_failure(error, traceback)
-            if outcome == "failed"
+            if outcome in ("failed", "xfailed")
             else ""
         )
 

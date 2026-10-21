@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import streamlit as st
+from failure_classifier import analyze_failure
 
 API_URL = "http://127.0.0.1:8000"
 
@@ -108,3 +109,44 @@ if results:
     )
 else:
     st.info("No test results found in the database.")
+
+
+# Test failure analysis
+st.divider()
+st.subheader("Failure Analysis")
+
+if results:
+    failed_results = [
+        result for result in results
+        if str(result.get("status", "")).strip().lower() in ("failed", "xfailed")
+    ]
+
+    if failed_results:
+        selected_test = st.selectbox(
+            "Select a failed test",
+            failed_results,
+            format_func=lambda test: test["test_name"]
+        )
+
+        analysis = analyze_failure(
+            selected_test.get("error", ""),
+            selected_test.get("traceback", "")
+        )
+
+        st.markdown(f"**Category**: {analysis['category']}")
+        st.markdown(f"**Likely cause**")
+        st.write(analysis["likely_cause"])
+
+        st.markdown("**Suggested troubleshooting steps**")
+        for suggestion in analysis["suggestions"]:
+            st.markdown(f"- {suggestion}")
+
+        with st.expander("View original error"):
+            st.code(selected_test.get("error", "No error message"))
+            st.code(selected_test.get("traceback", "No traceback"))
+
+    else:
+        st.info("No failed tests in the latest run.")
+
+else:
+    st.info("No test results available for analysis.")

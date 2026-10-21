@@ -1,4 +1,3 @@
-
 import sqlite3
 
 from failure_analyzer.database import DATABASE_PATH
