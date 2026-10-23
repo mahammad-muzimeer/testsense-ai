@@ -129,11 +129,16 @@ if results:
         )
 
         analysis = analyze_failure(
-            selected_test.get("error", ""),
-            selected_test.get("traceback", "")
+            selected_test.get("error") or "",
+            selected_test.get("traceback") or "",
         )
 
-        st.markdown(f"**Category**: {analysis['category']}")
+        st.markdown(f"**Category:** {analysis['category']}")
+        st.markdown(f"**Confidence:** {analysis['confidence']}")
+
+        st.markdown("**Evidence**")
+        st.write(analysis["evidence"])
+
         st.markdown(f"**Likely cause**")
         st.write(analysis["likely_cause"])
 
