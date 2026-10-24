@@ -36,6 +36,10 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Local database and generated reports
+reports/*.db
+reports/*.json
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -216,4 +220,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-reports/*.json
