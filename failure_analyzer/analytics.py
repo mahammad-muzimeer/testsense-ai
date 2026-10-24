@@ -93,6 +93,61 @@ def get_test_statistics():
     finally:
         connection.close()
 
+def get_test_history(limit=20):
+    """ Return historical test statistics grouped by test run."""
+    connection = sqlite3.connect(DATABASE_PATH)
+
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                run_id,
+                MIN(created_at) AS run_date,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) AS passed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'xfailed' THEN 1 ELSE 0 END) AS expected_failures
+            FROM test_results
+            WHERE run_id IS NOT NULL
+            GROUP BY run_id
+            ORDER BY run_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+        rows = cursor.fetchall()
+        history = []
+
+        for row in rows:
+            run_id, run_date, total, passed, failed, expected_failures = row
+
+            passed = passed or 0
+            failed = failed or 0
+            expected_failures = expected_failures or 0
+            completed_tests = passed + failed
+
+            pass_percentage = round(
+                passed / completed_tests * 100 if completed_tests else 0,
+            )
+
+            history.append({
+                "run_id": run_id,
+                "run_date": run_date,
+                "total": total or 0,
+                "passed": passed,
+                "failed": failed,
+                "expected_failures": expected_failures,
+                "pass_percentage": pass_percentage,
+            })
+
+        # Returns runs in chronological order for charting
+        return list(reversed(history))
+
+    finally:
+        connection.close()
 
 if __name__ == "__main__":
     print(get_test_statistics())

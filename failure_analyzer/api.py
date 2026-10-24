@@ -1,7 +1,7 @@
 import sqlite3
 from fastapi import FastAPI, HTTPException
 from failure_analyzer.database import DATABASE_PATH
-from failure_analyzer.analytics import get_test_statistics
+from failure_analyzer.analytics import get_test_statistics, get_test_history
 
 app = FastAPI(
     title="TestSense API",
@@ -72,3 +72,15 @@ def get_results(limit: int = 20):
 
     finally:
         connection.close()
+
+@app.get("/analytics/history")
+def analytics_history(limit: int = 20):
+    if not 1 <= limit <= 100:
+        raise HTTPException(
+            status_code=400,
+            detail="limit must be between 1 and 100",
+        )
+
+    return {
+        "history": get_test_history(limit),
+    }

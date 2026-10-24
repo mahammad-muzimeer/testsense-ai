@@ -77,7 +77,11 @@ def collect_failures(report_path):
         results.append({
             "test_name": test.get("nodeid", "Unknown test"),
             "status": outcome,
-            "duration": test.get("duration", 0),
+            "duration": (
+                test.get("duration")
+                or (test.get("call") or {}).get("duration")
+                or 0
+            ),
             "error": error,
             "traceback": traceback,
             "category": category
