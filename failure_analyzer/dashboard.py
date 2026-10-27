@@ -1,3 +1,5 @@
+import re
+
 import requests
 import pandas as pd
 import streamlit as st
@@ -108,6 +110,8 @@ st.divider()
 # Test results table
 st.subheader("Recent Test Results")
 
+# Always initialize the DataFrame, even when no results exist.
+results_df = pd.DataFrame(results)
 
 def format_duration(seconds):
     if seconds is None or pd.isna(seconds):
@@ -208,9 +212,10 @@ if results:
 
     if failed_results:
         selected_test = st.selectbox(
-            "Select a failed test",
+            "Select a failed test to investigate",
             failed_results,
-            format_func=lambda test: test["test_name"]
+            format_func=lambda test: test.get("test_name", "Unknown test"),
+            key="failure_analysis_test",
         )
 
         analysis = analyze_failure(
@@ -218,25 +223,74 @@ if results:
             selected_test.get("traceback") or "",
         )
 
-        st.markdown(f"**Category:** {analysis['category']}")
-        st.markdown(f"**Confidence:** {analysis['confidence']}")
+        # Summary cards
+        col1, col2 = st.columns(2)
 
-        st.markdown("**Evidence**")
-        st.write(analysis["evidence"])
+        with col1:
+            st.metric(
+                "Failure Category",
+                analysis.get("category", "Unknown Failures"),
+            )
 
-        st.markdown(f"**Likely cause**")
-        st.write(analysis["likely_cause"])
+        with col2:
+            st.metric(
+                "Analysis Confidence",
+                analysis.get("confidence", "N/A"),
+            )
 
-        st.markdown("**Suggested troubleshooting steps**")
-        for suggestion in analysis["suggestions"]:
-            st.markdown(f"- {suggestion}")
+        # Diagnosis
+        st.markdown("### 🩺 Diagnosis")
 
-        with st.expander("View original error"):
-            st.code(selected_test.get("error", "No error message"))
-            st.code(selected_test.get("traceback", "No traceback"))
+        with st.container(border=True):
+            st.markdown(f"**Likely cause**")
+            st.write(
+                analysis.get(
+                    "likely_cause",
+                    "No likely cause could be determined.",
+                )
+            )
+
+            st.markdown("**Evidence**")
+            st.code(
+                str(analysis.get("evidence") or "No evidence available."),
+                language=None,
+            )
+
+        # Recommended actions
+        st.markdown("### 🛠️ Recommended troubleshooting")
+
+        suggestions = analysis.get("suggestions", [])
+
+        if suggestions:
+            for index, suggestion in enumerate(suggestions, start=1):
+                st.markdown(f"**{index}.** {suggestion}")
+        else:
+            st.info("No troubleshooting suggestion are available.")
+
+        # Technical details
+        with st.expander("🔎 View technical details", expanded=False):
+            error_text = str(
+                selected_test.get("error") or "No error message available."
+            )
+            traceback_text = str(
+                selected_test.get("traceback") or "No traceback available."
+            )
+            # Remove ANSI terminal color/control sequences.
+            ansi_pattern = re.compile(
+                r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
+            )
+
+            error_text = ansi_pattern.sub("", error_text)
+            traceback_text = ansi_pattern.sub("", traceback_text)
+
+            st.markdown("**Error message**")
+            st.code(error_text, language=None)
+
+            st.markdown("**Traceback**")
+            st.code(traceback_text, language="python")
 
     else:
-        st.info("No failed tests in the latest run.")
+        st.success("🎉 No failed tests in the latest run.")
 
 else:
     st.info("No test results available for analysis.")
@@ -263,11 +317,17 @@ if results:
             report_rows.append({
                 "Test Name": test.get("test_name", ""),
                 "Status": test.get("status", ""),
-                "Failure Category": test.get("category", ""),
-                "Confidence": test.get("confidence", ""),
-                "Evidence": test.get("evidence", ""),
+
+                # use the actual failure analysis output
+                "Failure Category": analysis.get(
+                    "category",
+                    test.get("category", "Unknown Failures"),
+                ),
+                "Confidence": analysis.get("confidence", "N/A"),
+                "Evidence": analysis.get("evidence", ""),
                 "Error Message": test.get("error") or "",
-                "Likely Cause": test.get("likely_cause", ""),
+                "Likely Cause": analysis.get("likely_cause", ""),
+
                 "Suggested Fixes": " | ".join(
                     str(item) for item in analysis.get("suggestions", [])
                 ),
