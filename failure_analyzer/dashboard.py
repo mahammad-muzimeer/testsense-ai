@@ -1,11 +1,14 @@
+
 import re
 
-import requests
 import pandas as pd
+import requests
 import streamlit as st
 from failure_classifier import analyze_failure
 
+
 API_URL = "http://127.0.0.1:8000"
+FAILED_STATUSES = {"failed", "xfailed"}
 
 st.set_page_config(
     page_title="TestSense AI",
@@ -19,6 +22,10 @@ st.caption("Automated Test Failure Analysis Dashboard")
 if st.button("🔄 Refresh Dashboard"):
     st.rerun()
 
+
+# ---------------------------------------------------------
+# Fetch data from the API
+# ---------------------------------------------------------
 try:
     analytics_response = requests.get(
         f"{API_URL}/analytics",
@@ -40,6 +47,7 @@ try:
     )
     results_response.raise_for_status()
     results = results_response.json().get("results", [])
+
 except requests.RequestException as error:
     st.error(f"Could not connect to the API: {error}")
     st.info(
@@ -48,201 +56,293 @@ except requests.RequestException as error:
     )
     st.stop()
 
-run_id = analytics.get("run_id")
 
-if run_id is not None:
-    st.caption(f"Latest Test run ID: {run_id}")
-else:
-    st.warning("No tracked test run found.")
-
-st.subheader("Test Run Overview")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Total tests", analytics.get("total", 0))
-col2.metric("Passed", analytics.get("passed", 0))
-col3.metric("Failed", analytics.get("failed", 0))
-col4.metric("Expected Failures", analytics.get("expected_failures", 0))
-col5.metric("Pass Rate", f'{analytics["pass_percentage"]}%')
-
-st.divider()
-
-# Failure category chart
-st.subheader("Failure Category")
-
-categories = analytics.get("failure_categories", [])
-
-if categories:
-    category_df = pd.DataFrame(
-        categories,
-        columns=["Category", "Occurrences"],
-    )
-    st.bar_chart(
-        category_df.set_index("Category"),
-        y="Occurrences",
-    )
-else:
-    st.info("No failure categories recorded yet.")
-
-st.divider()
-
-st.subheader("Historical Test Trends")
-
-if history:
-    history_df = pd.DataFrame(history)
-
-    st.line_chart(
-        history_df.set_index("run_id")[
-            ["pass_percentage"]
-        ]
-    )
-
-    st.line_chart(
-        history_df.set_index("run_id")[
-            ["passed", "failed", "expected_failures"]
-        ]
-    )
-else:
-    st.info("No historical test runs available yet.")
-
-st.divider()
-
-# Test results table
-st.subheader("Recent Test Results")
-
-# Always initialize the DataFrame, even when no results exist.
+# ---------------------------------------------------------
+# Prepare shared data
+# ---------------------------------------------------------
 results_df = pd.DataFrame(results)
+history_df = pd.DataFrame(history)
+
+failed_results = [
+    result
+    for result in results
+    if str(result.get("status", "")).strip().lower()
+    in FAILED_STATUSES
+]
+
+# Analyze failures once so the diagnosis and CSV report agree.
+failure_records = []
+
+for test in failed_results:
+    analysis = analyze_failure(
+        test.get("error") or "",
+        test.get("traceback") or "",
+    )
+
+    failure_records.append({
+        "test": test,
+        "analysis": analysis,
+    })
+
 
 def format_duration(seconds):
+    """Convert a duration in seconds into a readable value."""
     if seconds is None or pd.isna(seconds):
         return "N/A"
 
-    seconds = float(seconds)
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        return "N/A"
+
+    if seconds < 0:
+        return "N/A"
 
     if seconds < 1:
         return f"{seconds * 1000:.2f} ms"
 
     return f"{seconds:.2f} s"
 
-if results:
-    results_df = pd.DataFrame(results)
 
-    # Filter by test status
-    statuses = ["All"] + sorted(
-        results_df["status"].dropna().unique().tolist()
+def clean_terminal_text(value):
+    """Remove ANSI terminal color/control sequences."""
+    text = str(value or "")
+
+    ansi_pattern = re.compile(
+        r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
     )
-    selected_status = st.selectbox("Filter by status", statuses, key="status_filter")
 
-    filtered_df = results_df.copy()
+    return ansi_pattern.sub("", text)
 
-    if selected_status != "All":
-        filtered_df = filtered_df[filtered_df["status"] == selected_status]
 
-    # Filter by failure category, if available
-    if "category" in filtered_df.columns:
-        categories = ["All"] + sorted(
-            filtered_df["category"].dropna().astype(str).unique().tolist()
+# ---------------------------------------------------------
+# Header information
+# ---------------------------------------------------------
+run_id = analytics.get("run_id")
+
+if run_id is not None:
+    st.caption(f"Latest tracked test run: #{run_id}")
+else:
+    st.warning("No tracked test run found.")
+
+
+# ---------------------------------------------------------
+# Navigation
+# ---------------------------------------------------------
+overview_tab, results_tab, failure_tab, reports_tab = st.tabs([
+    "📊 Overview",
+    "🧪 Test Results",
+    "🔍 Failure Analysis",
+    "📥 Reports",
+])
+
+
+# =========================================================
+# TAB 1: OVERVIEW
+# =========================================================
+with overview_tab:
+    st.subheader("Test Run Overview")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    col1.metric("Total Tests", analytics.get("total", 0))
+    col2.metric("Passed", analytics.get("passed", 0))
+    col3.metric("Failed", analytics.get("failed", 0))
+    col4.metric(
+        "Expected Failures",
+        analytics.get("expected_failures", 0),
+    )
+    col5.metric(
+        "Pass Rate",
+        f'{analytics.get("pass_percentage", 0)}%',
+    )
+
+    st.divider()
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        st.subheader("Failure Categories")
+
+        categories = analytics.get("failure_categories", [])
+
+        if categories:
+            category_df = pd.DataFrame(
+                categories,
+                columns=["Category", "Occurrences"],
+            )
+
+            st.bar_chart(
+                category_df.set_index("Category"),
+                y="Occurrences",
+            )
+        else:
+            st.success("No failure categories recorded.")
+
+    with chart_col2:
+        st.subheader("Pass Rate Trend")
+
+        if not history_df.empty and {
+            "run_id",
+            "pass_percentage",
+        }.issubset(history_df.columns):
+            trend_df = history_df.sort_values("run_id")
+
+            st.line_chart(
+                trend_df.set_index("run_id")[["pass_percentage"]]
+            )
+        else:
+            st.info("Historical pass-rate data is not available yet.")
+
+    st.subheader("Test Execution Trend")
+
+    trend_columns = [
+        column
+        for column in ["passed", "failed", "expected_failures"]
+        if column in history_df.columns
+    ]
+
+    if not history_df.empty and "run_id" in history_df.columns and trend_columns:
+        trend_df = history_df.sort_values("run_id")
+
+        st.line_chart(
+            trend_df.set_index("run_id")[trend_columns]
         )
-        selected_category = st.selectbox(
-            "Filter by category",
-            categories,
-            key="category_filter",
-        )
+    else:
+        st.info("Historical execution data is not available yet.")
 
-        if selected_category != "All":
+    if failed_results:
+        st.warning(
+            f"{len(failed_results)} failed or expected-failure "
+            "test result(s) are available for investigation."
+        )
+    else:
+        st.success("No failed or expected-failure results were returned.")
+
+
+# =========================================================
+# TAB 2: TEST RESULTS
+# =========================================================
+with results_tab:
+    st.subheader("Recent Test Results")
+
+    if not results_df.empty:
+        filtered_df = results_df.copy()
+
+        filter_col1, filter_col2 = st.columns(2)
+
+        with filter_col1:
+            statuses = ["All"]
+
+            if "status" in results_df.columns:
+                statuses += sorted(
+                    results_df["status"].dropna().astype(str).unique().tolist()
+                )
+
+            selected_status = st.selectbox(
+                "Filter by status",
+                statuses,
+                key="results_status_filter",
+            )
+
+        with filter_col2:
+            categories = ["All"]
+
+            if "category" in results_df.columns:
+                categories += sorted(
+                    results_df["category"].dropna().astype(str).unique().tolist()
+                )
+
+            selected_category = st.selectbox(
+                "Filter by failure category",
+                categories,
+                key="results_category_filter",
+            )
+
+        if selected_status != "All" and "status" in filtered_df.columns:
+            filtered_df = filtered_df[
+                filtered_df["status"].astype(str) == selected_status
+            ]
+
+        if selected_category != "All" and "category" in filtered_df.columns:
             filtered_df = filtered_df[
                 filtered_df["category"].astype(str) == selected_category
             ]
 
-    # Create a display-only copy so the original data stays unchanged
-    display_df = filtered_df.copy()
+        display_df = filtered_df.copy()
 
-    if "duration" in display_df.columns:
-        display_df["duration"] = display_df["duration"].apply(
-            format_duration
+        if "duration" in display_df.columns:
+            display_df["duration"] = display_df["duration"].apply(
+                format_duration
+            )
+
+        columns_to_show = [
+            column
+            for column in [
+                "id",
+                "test_name",
+                "status",
+                "category",
+                "duration",
+                "created_at",
+            ]
+            if column in display_df.columns
+        ]
+
+        st.dataframe(
+            display_df[columns_to_show],
+            use_container_width=True,
+            hide_index=True,
         )
 
-    columns_to_show = [
-        column
-        for column in [
-            "id",
-            "test_name",
-            "status",
-            "category",
-            "duration",
-            "created_at",
-        ]
-        if column in display_df.columns
-    ]
-
-    st.dataframe(
-        display_df[columns_to_show],
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.caption(f"Showing {len(filtered_df)} test result(s).")
-else:
-    st.info("No test results found in the database.")
+        st.caption(f"Showing {len(filtered_df)} result(s).")
+    else:
+        st.info("No test results found in the database.")
 
 
-# Export test results to CSV
-st.subheader("Export Test Results")
-if not results_df.empty:
-    csv_data = results_df.to_csv(index=False).encode("utf-8")
+# =========================================================
+# TAB 3: FAILURE ANALYSIS
+# =========================================================
+with failure_tab:
+    st.subheader("Failure Diagnosis")
 
-    st.download_button(
-        label="Download Test Results (CSV)",
-        data=csv_data,
-        file_name="testsense_test_results.csv",
-        mime="text/csv",
-    )
-else:
-    st.info("No test results available to export.")
-
-st.divider()
-
-# Test failure analysis
-st.subheader("Failure Analysis")
-
-if results:
-    failed_results = [
-        result for result in results
-        if str(result.get("status", "")).strip().lower() in ("failed", "xfailed")
-    ]
-
-    if failed_results:
-        selected_test = st.selectbox(
+    if failure_records:
+        selected_index = st.selectbox(
             "Select a failed test to investigate",
-            failed_results,
-            format_func=lambda test: test.get("test_name", "Unknown test"),
+            range(len(failure_records)),
+            format_func=lambda index: (
+                failure_records[index]["test"].get(
+                    "test_name",
+                    "Unknown test",
+                )
+            ),
             key="failure_analysis_test",
         )
 
-        analysis = analyze_failure(
-            selected_test.get("error") or "",
-            selected_test.get("traceback") or "",
-        )
+        selected_record = failure_records[selected_index]
+        selected_test = selected_record["test"]
+        analysis = selected_record["analysis"]
 
-        # Summary cards
-        col1, col2 = st.columns(2)
+        metric_col1, metric_col2 = st.columns(2)
 
-        with col1:
+        with metric_col1:
             st.metric(
                 "Failure Category",
-                analysis.get("category", "Unknown Failures"),
+                analysis.get(
+                    "category",
+                    selected_test.get("category", "Unknown Failure"),
+                ),
             )
 
-        with col2:
+        with metric_col2:
             st.metric(
                 "Analysis Confidence",
                 analysis.get("confidence", "N/A"),
             )
 
-        # Diagnosis
-        st.markdown("### 🩺 Diagnosis")
+        st.markdown("### 🩺 Likely Cause")
 
         with st.container(border=True):
-            st.markdown(f"**Likely cause**")
             st.write(
                 analysis.get(
                     "likely_cause",
@@ -250,14 +350,14 @@ if results:
                 )
             )
 
-            st.markdown("**Evidence**")
+            st.markdown("**Supporting evidence**")
+
             st.code(
                 str(analysis.get("evidence") or "No evidence available."),
                 language=None,
             )
 
-        # Recommended actions
-        st.markdown("### 🛠️ Recommended troubleshooting")
+        st.markdown("### 🛠️ Recommended Troubleshooting")
 
         suggestions = analysis.get("suggestions", [])
 
@@ -265,94 +365,89 @@ if results:
             for index, suggestion in enumerate(suggestions, start=1):
                 st.markdown(f"**{index}.** {suggestion}")
         else:
-            st.info("No troubleshooting suggestion are available.")
+            st.info("No troubleshooting suggestions are available.")
 
-        # Technical details
-        with st.expander("🔎 View technical details", expanded=False):
-            error_text = str(
-                selected_test.get("error") or "No error message available."
-            )
-            traceback_text = str(
-                selected_test.get("traceback") or "No traceback available."
-            )
-            # Remove ANSI terminal color/control sequences.
-            ansi_pattern = re.compile(
-                r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
-            )
-
-            error_text = ansi_pattern.sub("", error_text)
-            traceback_text = ansi_pattern.sub("", traceback_text)
-
+        with st.expander("🔎 View Technical Details", expanded=False):
             st.markdown("**Error message**")
-            st.code(error_text, language=None)
+            st.code(
+                clean_terminal_text(selected_test.get("error")),
+                language=None,
+            )
 
             st.markdown("**Traceback**")
-            st.code(traceback_text, language="python")
+            st.code(
+                clean_terminal_text(selected_test.get("traceback")),
+                language="python",
+            )
 
     else:
-        st.success("🎉 No failed tests in the latest run.")
+        st.success("🎉 No failed or expected-failure tests to investigate.")
 
-else:
-    st.info("No test results available for analysis.")
 
-# Export failure analysis report
-st.subheader("Export Failure Analysis Report")
+# =========================================================
+# TAB 4: REPORTS
+# =========================================================
+with reports_tab:
+    st.subheader("Export Test Results")
 
-if results:
-    failed_results = [
-        result for result in results
-        if str(result.get("status", "")).strip().lower()
-        in ("failed", "xfailed")
-    ]
+    if not results_df.empty:
+        results_csv = results_df.to_csv(index=False).encode("utf-8")
 
-    if failed_results:
+        st.download_button(
+            label="⬇️ Download Test Results (CSV)",
+            data=results_csv,
+            file_name="testsense_test_results.csv",
+            mime="text/csv",
+            key="download_test_results",
+        )
+    else:
+        st.info("No test results are available to export.")
+
+    st.divider()
+
+    st.subheader("Export Failure Analysis Report")
+
+    if failure_records:
         report_rows = []
 
-        for test in failed_results:
-            analysis = analyze_failure(
-                test.get("error") or "",
-                test.get("traceback") or "",
-            )
+        for record in failure_records:
+            test = record["test"]
+            analysis = record["analysis"]
 
             report_rows.append({
                 "Test Name": test.get("test_name", ""),
                 "Status": test.get("status", ""),
-
-                # use the actual failure analysis output
                 "Failure Category": analysis.get(
                     "category",
-                    test.get("category", "Unknown Failures"),
+                    test.get("category", "Unknown Failure"),
                 ),
                 "Confidence": analysis.get("confidence", "N/A"),
                 "Evidence": analysis.get("evidence", ""),
-                "Error Message": test.get("error") or "",
+                "Error Message": clean_terminal_text(test.get("error")),
                 "Likely Cause": analysis.get("likely_cause", ""),
-
                 "Suggested Fixes": " | ".join(
-                    str(item) for item in analysis.get("suggestions", [])
+                    str(item)
+                    for item in analysis.get("suggestions", [])
                 ),
-                "Traceback": test.get("traceback") or "",
+                "Traceback": clean_terminal_text(test.get("traceback")),
                 "Duration": test.get("duration", 0),
             })
 
         report_df = pd.DataFrame(report_rows)
 
-        csv_report = report_df.to_csv(
-            index=False,
-        ).encode("utf-8")
+        report_csv = report_df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
-            label="Download Failure Analysis Report (CSV)",
-            data=csv_report,
+            label="⬇️ Download Failure Analysis Report (CSV)",
+            data=report_csv,
             file_name="testsense_failure_report.csv",
             mime="text/csv",
             key="download_failure_analysis",
         )
 
         st.caption(
-            f"Report includes {len(report_df)} failed or expected-failures test(s)."
+            f"Report includes {len(report_df)} failed or expected-failure "
+            "test result(s)."
         )
     else:
-        st.info("No failure analysis records available to export.")
-else:
-    st.info("No test results available to export.")
+        st.info("No failure analysis records are available to export.")
